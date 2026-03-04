@@ -1,8 +1,13 @@
 """Render Excalidraw JSON to PNG using Playwright + headless Chromium.
 
+Supports both .excalidraw (plain JSON) and .md (Obsidian Excalidraw frontmatter) files.
+For .md files, the JSON is extracted from inside the %%...%% block automatically.
+
 Usage:
     cd .claude/skills/excalidraw-diagram/references
-    uv run python render_excalidraw.py <path-to-file.excalidraw> [--output path.png] [--scale 2] [--width 1920]
+    uv run python render_excalidraw.py <path-to-file.md>           # Obsidian format
+    uv run python render_excalidraw.py <path-to-file.excalidraw>   # standard format
+    uv run python render_excalidraw.py <path> [--output path.png] [--scale 2] [--width 1920]
 
 First-time setup:
     cd .claude/skills/excalidraw-diagram/references
@@ -69,13 +74,49 @@ def compute_bounding_box(elements: list[dict]) -> tuple[float, float, float, flo
     return (min_x, min_y, max_x, max_y)
 
 
+def extract_json_from_obsidian_md(content: str) -> dict:
+    """Extract and parse the Excalidraw JSON embedded in an Obsidian .md file.
+
+    Obsidian Excalidraw files wrap the JSON in a Markdown block like this:
+
+        %%
+        ## Drawing
+        ```json
+        { ...excalidraw JSON... }
+        ```
+        %%
+
+    This function finds that block, extracts the raw JSON string, and parses it.
+    Raises ValueError if the expected structure is not found or the JSON is invalid.
+    """
+    import re
+
+    match = re.search(
+        r'%%.*?```json\s*\n(.*?)\n\s*```.*?%%',
+        content,
+        re.DOTALL,
+    )
+    if not match:
+        raise ValueError(
+            "Could not find a ```json ... ``` block inside %% markers. "
+            "Is this a valid Obsidian Excalidraw .md file?"
+        )
+
+    json_str = match.group(1).strip()
+    try:
+        return json.loads(json_str)
+    except json.JSONDecodeError as e:
+        raise ValueError(f"JSON inside the Obsidian .md file is invalid: {e}") from e
+
+
+
 def render(
     excalidraw_path: Path,
     output_path: Path | None = None,
     scale: int = 2,
     max_width: int = 1920,
 ) -> Path:
-    """Render an .excalidraw file to PNG. Returns the output PNG path."""
+    """Render an .excalidraw or Obsidian .md file to PNG. Returns the output PNG path."""
     # Import playwright here so validation errors show before import errors
     try:
         from playwright.sync_api import sync_playwright
@@ -84,12 +125,15 @@ def render(
         print("Run: cd .claude/skills/excalidraw-diagram/references && uv sync && uv run playwright install chromium", file=sys.stderr)
         sys.exit(1)
 
-    # Read and validate
+    # Read and parse — handles both .excalidraw (plain JSON) and .md (Obsidian format)
     raw = excalidraw_path.read_text(encoding="utf-8")
     try:
-        data = json.loads(raw)
-    except json.JSONDecodeError as e:
-        print(f"ERROR: Invalid JSON in {excalidraw_path}: {e}", file=sys.stderr)
+        if excalidraw_path.suffix == ".md":
+            data = extract_json_from_obsidian_md(raw)
+        else:
+            data = json.loads(raw)
+    except (json.JSONDecodeError, ValueError) as e:
+        print(f"ERROR: Could not parse {excalidraw_path}: {e}", file=sys.stderr)
         sys.exit(1)
 
     errors = validate_excalidraw(data)
@@ -171,7 +215,7 @@ def render(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Render Excalidraw JSON to PNG")
-    parser.add_argument("input", type=Path, help="Path to .excalidraw JSON file")
+    parser.add_argument("input", type=Path, help="Path to .excalidraw or Obsidian .md diagram file")
     parser.add_argument("--output", "-o", type=Path, default=None, help="Output PNG path (default: same name with .png)")
     parser.add_argument("--scale", "-s", type=int, default=2, help="Device scale factor (default: 2)")
     parser.add_argument("--width", "-w", type=int, default=1920, help="Max viewport width (default: 1920)")

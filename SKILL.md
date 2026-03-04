@@ -1,13 +1,73 @@
 ---
 name: excalidraw-diagram
-description: Create Excalidraw diagram JSON files that make visual arguments. Use when the user wants to visualize workflows, architectures, or concepts.
+description: Create Excalidraw diagrams that argue visually. Supports Obsidian-native .md format (default) and standard .excalidraw format. Use when the user wants to visualize workflows, architectures, or concepts.
 ---
 
 # Excalidraw Diagram Creator
 
-Generate `.excalidraw` JSON files that **argue visually**, not just display information.
+Generate diagrams that **argue visually**, not just display information. Outputs Obsidian-native `.md` files by default, or standard `.excalidraw` files for sharing.
 
 **Setup:** If the user asks you to set up this skill (renderer, dependencies, etc.), see `README.md` for instructions.
+
+## Output Modes
+
+Choose output format based on where the diagram will be used:
+
+| Mode | Output | When to Use |
+|------|--------|-------------|
+| **Obsidian** (default) | `.md` with excalidraw frontmatter | Working inside an Obsidian vault |
+| **Standard** | `.excalidraw` | Sharing, excalidraw.com, non-Obsidian contexts |
+
+**Detecting the right mode:**
+- Default to Obsidian mode unless the user explicitly says "standard excalidraw", ".excalidraw file", or "for excalidraw.com"
+- When in a directory that looks like an Obsidian vault (has `.obsidian/`), always use Obsidian mode
+
+---
+
+### Obsidian Mode (Default)
+
+Generates a `.md` file the Obsidian Excalidraw plugin reads natively. Opens directly in Obsidian — no conversion needed.
+
+**File naming:** `[topic].[diagram-type].md` — e.g., `auth-flow.flowchart.md`, `system-design.hierarchy.md`
+
+**Exact file structure (copy precisely):**
+
+```markdown
+---
+excalidraw-plugin: parsed
+tags: [excalidraw]
+---
+==⚠  Switch to EXCALIDRAW VIEW in the MORE OPTIONS menu of this note. ⚠==
+
+# Excalidraw Data
+
+## Text Elements
+%%
+## Drawing
+```json
+{ ...full Excalidraw JSON here... }
+```
+%%
+```
+
+**Rules:**
+- The `## Text Elements` block stays **empty** — Obsidian auto-populates it from the JSON
+- JSON `source` field must be `"https://github.com/zsviczian/obsidian-excalidraw-plugin"`
+- Render validation: pass the `.md` file path directly to the render script — it extracts the JSON automatically
+
+**After generating:** report the exact file path and tell the user to open it in Obsidian → MORE OPTIONS (⋮) → "Switch to Excalidraw view".
+
+---
+
+### Standard Mode
+
+Generates a pure `.excalidraw` JSON file for excalidraw.com or other tools.
+
+**File naming:** `[topic].[diagram-type].excalidraw` — e.g., `auth-flow.flowchart.excalidraw`
+
+**File format:** plain JSON, no Markdown wrapper. JSON `source` must be `"https://excalidraw.com"`.
+
+---
 
 ## Customization
 
@@ -424,6 +484,24 @@ Settings: `fontSize: 16`, `fontFamily: 3`, `textAlign: "center"`, `verticalAlign
 
 ## JSON Structure
 
+**Obsidian mode** — embedded inside the `.md` wrapper (see Output Modes above):
+
+```json
+{
+  "type": "excalidraw",
+  "version": 2,
+  "source": "https://github.com/zsviczian/obsidian-excalidraw-plugin",
+  "elements": [...],
+  "appState": {
+    "viewBackgroundColor": "#ffffff",
+    "gridSize": 20
+  },
+  "files": {}
+}
+```
+
+**Standard mode** — written directly as a `.excalidraw` file:
+
 ```json
 {
   "type": "excalidraw",
@@ -451,10 +529,10 @@ You cannot judge a diagram from JSON alone. After generating or editing the Exca
 ### How to Render
 
 ```bash
-cd .claude/skills/excalidraw-diagram/references && uv run python render_excalidraw.py <path-to-file.excalidraw>
+cd .claude/skills/excalidraw-diagram/references && uv run python render_excalidraw.py <path-to-diagram.md>
 ```
 
-This outputs a PNG next to the `.excalidraw` file. Then use the **Read tool** on the PNG to actually view it.
+This outputs a PNG next to the diagram file. Works with both `.md` (Obsidian) and `.excalidraw` files — the script extracts JSON from whichever format is given. Then use the **Read tool** on the PNG to actually view it.
 
 ### The Loop
 
